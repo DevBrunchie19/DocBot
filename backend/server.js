@@ -1,3 +1,12 @@
+import fs from 'fs';
+import path from 'path';
+
+const dataDir = path.join(__dirname, 'data');
+
+// Ensure the data directory exists
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
