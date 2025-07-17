@@ -97,7 +97,7 @@
       input.value = '';
 
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const response = await fetch(`/search?q=${encodeURIComponent(query)}`);
         const data = await response.json();
         if (data.results.length > 0) {
           appendMessage(data.results[0].text, 'bot');
