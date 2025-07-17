@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document Search Bot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>McHelpie</title>
     <style>
     body {
       font-family: Arial, sans-serif;
@@ -69,11 +69,15 @@
     }
   </style>
 </head>
-<body>
-    <h1>Search the Documents</h1>
-    <input type="text" id="queryInput" placeholder="Ask something...">
-    <button id="submitBtn">Search</button>
-    <div id="results"></div>
+ <div id="chatbox">
+    <div class="message welcome" id="welcome">Hi! I'm <strong>McHelpie</strong>. What can I help you with today?</div>
+    <div id="messages"></div>
+    <div id="controls" class="buttons">
+      <input type="text" id="userInput" placeholder="Type your question here">
+      <button onclick="handleUserQuestion()">Send</button>
+    </div>
+  </div>
+
 
     <script>
         const submitBtn = document.getElementById('submitBtn');
