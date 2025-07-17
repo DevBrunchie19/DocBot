@@ -1,96 +1,96 @@
+// backend/server.js
+import express from 'express';
+import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-
-const dataDir = path.join(__dirname, 'data');
-
-// Ensure the data directory exists
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
-const pdfParse = require('pdf-parse');
-const { Document, Packer } = require('docx');
-const Fuse = require('fuse.js');
+import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
+import Fuse from 'fuse.js';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
+// Enable CORS
 app.use(cors());
-app.use(express.static(path.join(__dirname, '../'))); // Serve index.html
 
-const documentsDir = path.join(__dirname, 'data');
-let documents = [];
+// Path to data directory
+const dataDir = path.join(__dirname, 'data');
 
-// Load all documents (PDF/DOCX/TXT)
+// Ensure data directory exists
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  console.log(`Created missing directory: ${dataDir}`);
+}
+
+// Function to load and parse files
 async function loadDocuments() {
-  const files = fs.readdirSync(documentsDir);
-  documents = [];
+  const files = fs.readdirSync(dataDir);
+  const documents = [];
 
   for (const file of files) {
     const ext = path.extname(file).toLowerCase();
-    const filePath = path.join(documentsDir, file);
-    let content = '';
+    const filePath = path.join(dataDir, file);
 
     try {
-      if (ext === '.pdf') {
+      let content = '';
+
+      if (ext === '.txt') {
+        content = fs.readFileSync(filePath, 'utf8');
+      } else if (ext === '.pdf') {
         const dataBuffer = fs.readFileSync(filePath);
         const pdfData = await pdfParse(dataBuffer);
         content = pdfData.text;
       } else if (ext === '.docx') {
-        // Very basic docx text extraction
-        const dataBuffer = fs.readFileSync(filePath);
-        const zip = await require('jszip').loadAsync(dataBuffer);
-        const textParts = [];
-        for (const fileName of Object.keys(zip.files)) {
-          if (fileName.match(/word\/document.xml/)) {
-            const xmlText = await zip.files[fileName].async('string');
-            textParts.push(xmlText.replace(/<[^>]+>/g, ' ')); // Strip XML tags
-          }
-        }
-        content = textParts.join(' ');
-      } else if (ext === '.txt') {
-        content = fs.readFileSync(filePath, 'utf-8');
+        const result = await mammoth.extractRawText({ path: filePath });
+        content = result.value;
+      } else {
+        console.log(`Skipping unsupported file: ${file}`);
+        continue;
       }
 
-      documents.push({
-        content,
-        fileName: file
-      });
+      documents.push({ content });
     } catch (err) {
-      console.error(`Failed to load ${file}: ${err.message}`);
+      console.error(`Error reading ${file}:`, err);
     }
   }
 
-  console.log(`Loaded ${documents.length} documents`);
+  return documents;
 }
 
-loadDocuments();
-
-app.get('/api/search', (req, res) => {
+// API endpoint for search
+app.get('/api/search', async (req, res) => {
   const query = req.query.q;
-  if (!query) return res.status(400).json({ error: 'Missing query parameter' });
+  if (!query) {
+    return res.status(400).json({ error: 'Missing query parameter ?q' });
+  }
 
-  const fuse = new Fuse(documents, {
-    keys: ['content'],
-    includeScore: true,
-    threshold: 0.4 // Adjust for fuzzy matching
-  });
+  try {
+    const documents = await loadDocuments();
 
-  const results = fuse.search(query).map(r => ({
-    text: r.item.content.slice(0, 500) + '...', // Return snippet
-    score: r.score
-  }));
+    // Set up fuzzy search
+    const fuse = new Fuse(documents, {
+      keys: ['content'],
+      includeScore: true,
+      threshold: 0.4, // Adjust for more/less fuzziness
+    });
 
-  res.json({ results });
+    const results = fuse.search(query).slice(0, 5).map(r => ({
+      content: r.item.content.substring(0, 500) + '...', // Return preview
+    }));
+
+    if (results.length === 0) {
+      return res.json([{ content: "No relevant information found in documents." }]);
+    }
+
+    res.json(results);
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// Fallback to index.html for any other routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../index.html'));
-});
+// Serve frontend files (optional for deployment)
+app.use(express.static(path.join(__dirname, '../')));
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
