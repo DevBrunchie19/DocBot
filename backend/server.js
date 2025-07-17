@@ -56,4 +56,33 @@ loadDocuments().then(loaded => {
 });
 
 // Search API
-app.get('/search', (req, re
+app.get('/search', (req, res) => {
+  const query = req.query.q;
+  if (!query) {
+    return res.status(400).json({ error: 'Missing query parameter ?q=' });
+  }
+
+  if (documents.length === 0) {
+    return res.status(503).json({ error: 'No documents available to search.' });
+  }
+
+  const fuse = new Fuse(documents, {
+    keys: ['text'],
+    threshold: 0.3,
+    minMatchCharLength: 2
+  });
+
+  const results = fuse.search(query).map(result => result.item.text.slice(0, 500)); // Limit snippet size
+
+  res.json({ results });
+});
+
+// Root route
+app.get('/', (req, res) => {
+  res.send('McHelpie Backend is running');
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`[INFO] Server running on port ${PORT}`);
+});
