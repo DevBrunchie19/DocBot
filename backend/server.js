@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import Fuse from 'fuse.js';
 
@@ -11,10 +10,8 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Directory for documents
 const dataDir = path.resolve('./backend/data');
 
-// Function to load and parse all documents
 async function loadDocuments() {
   const docs = [];
   if (!fs.existsSync(dataDir)) {
@@ -28,6 +25,7 @@ async function loadDocuments() {
     const filePath = path.join(dataDir, file);
     try {
       if (ext === '.pdf') {
+        const pdfParse = (await import('pdf-parse')).default;
         const dataBuffer = fs.readFileSync(filePath);
         const pdfData = await pdfParse(dataBuffer);
         docs.push({ text: pdfData.text });
@@ -42,20 +40,17 @@ async function loadDocuments() {
       console.error(`Error loading ${file}:`, err.message);
     }
   }
-
   return docs;
 }
 
-// Load documents at startup
 let documents = [];
 loadDocuments().then(loaded => {
   documents = loaded;
-  console.log(`[INFO] Loaded ${documents.length} documents from /data`);
+  console.log(`[INFO] Loaded ${documents.length} documents`);
 }).catch(err => {
   console.error('[ERROR] Failed to load documents:', err);
 });
 
-// Search API
 app.get('/search', (req, res) => {
   const query = req.query.q;
   if (!query) {
@@ -72,17 +67,14 @@ app.get('/search', (req, res) => {
     minMatchCharLength: 2
   });
 
-  const results = fuse.search(query).map(result => result.item.text.slice(0, 500)); // Limit snippet size
-
+  const results = fuse.search(query).map(result => result.item.text.slice(0, 500));
   res.json({ results });
 });
 
-// Root route
 app.get('/', (req, res) => {
-  res.send('McHelpie Backend is running');
+  res.send('Backend is running');
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`[INFO] Server running on port ${PORT}`);
 });
