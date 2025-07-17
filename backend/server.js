@@ -1,109 +1,110 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
-import Fuse from 'fuse.js';
-import { fileURLToPath } from 'url';
-import pkg from 'pdfjs-dist/legacy/build/pdf.js'; // 👈 use legacy build for compatibility
-
-const { getDocument } = pkg;
-
-// Fix __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import fuzzysort from 'fuzzysort';
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const DATA_DIR = './backend/data';
 
-const dataDir = path.join(__dirname, 'data');
-let documents = [];
-let fuse = null;
+let documents = []; // Store loaded documents
 
-async function extractPdfText(filePath) {
-  const pdf = await getDocument(filePath).promise;
-  let text = '';
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    text += content.items.map(item => item.str).join(' ') + '\n';
-  }
-
-  return text;
-}
-
+// Function to load and parse documents
 async function loadDocuments() {
-  documents = []; // Reset documents
+    console.log('[INFO] Loading documents...');
+    documents = []; // Clear existing documents
 
-  if (!fs.existsSync(dataDir)) {
-    console.log(`[INFO] Creating data folder at ${dataDir}`);
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+    const files = fs.readdirSync(DATA_DIR);
+    for (const file of files) {
+        const filePath = path.join(DATA_DIR, file);
+        const ext = path.extname(file).toLowerCase();
 
-  const files = fs.readdirSync(dataDir).filter(file =>
-    ['.pdf', '.docx', '.txt'].includes(path.extname(file).toLowerCase())
-  );
+        try {
+            let text = '';
+            if (ext === '.pdf') {
+                const dataBuffer = fs.readFileSync(filePath);
+                const pdfData = await pdfParse(dataBuffer);
+                text = pdfData.text;
+            } else if (ext === '.docx') {
+                const result = await mammoth.extractRawText({ path: filePath });
+                text = result.value;
+            } else {
+                console.log(`[WARN] Skipping unsupported file: ${file}`);
+                continue;
+            }
 
-  console.log(`[INFO] Found ${files.length} files in data folder`);
-
-  for (const file of files) {
-    const filePath = path.join(dataDir, file);
-    try {
-      let text = '';
-      const ext = path.extname(file).toLowerCase();
-
-      if (ext === '.pdf') {
-        text = await extractPdfText(filePath);
-      } else if (ext === '.docx') {
-        const result = await mammoth.extractRawText({ path: filePath });
-        text = result.value;
-      } else if (ext === '.txt') {
-        text = fs.readFileSync(filePath, 'utf8');
-      }
-
-      documents.push({ content: text });
-      console.log(`[INFO] Loaded: ${file}`);
-    } catch (err) {
-      console.error(`[ERROR] Failed to load ${file}:`, err.message);
+            console.log(`[INFO] Loaded: ${file} (${text.length} characters)`);
+            documents.push({ name: file, text });
+        } catch (err) {
+            console.error(`[ERROR] Failed to load ${file}: ${err.message}`);
+        }
     }
-  }
 
-  fuse = new Fuse(documents, {
-    includeScore: true,
-    keys: ['content'],
-    threshold: 0.4
-  });
-  console.log(`[INFO] Document index ready (${documents.length} documents)`);
+    console.log(`[INFO] Total documents loaded: ${documents.length}`);
 }
 
-// Serve frontend
-const frontendDir = path.join(__dirname, '../frontend');
-app.use(express.static(frontendDir));
+// Chunk text into smaller pieces for fuzzy search
+const CHUNK_SIZE = 500; // number of characters per chunk
+function chunkText(text) {
+    const chunks = [];
+    for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+        chunks.push(text.slice(i, i + CHUNK_SIZE));
+    }
+    return chunks;
+}
 
-// Search endpoint
-app.get('/search', (req, res) => {
-  if (!fuse) {
-    return res.status(500).json({ error: 'Search index not ready' });
-  }
+// Search function using fuzzysort
+async function searchDocuments(query) {
+    const results = [];
 
-  const query = req.query.q;
-  if (!query) {
-    return res.status(400).json({ error: 'No query provided' });
-  }
+    for (const doc of documents) {
+        const chunks = chunkText(doc.text);
+        const matches = fuzzysort.go(query, chunks, { threshold: -1000, limit: 5 });
+        for (const match of matches) {
+            results.push(match.target);
+        }
+    }
 
-  const results = fuse.search(query).slice(0, 5).map(r => ({
-    text: r.item.content.slice(0, 500) + (r.item.content.length > 500 ? '...' : '')
-  }));
+    return results.slice(0, 5); // return top 5 matches
+}
 
-  res.json({ results });
+// Watch data folder for changes
+fs.watch(DATA_DIR, (eventType, filename) => {
+    if (filename) {
+        console.log(`[INFO] Change detected in ${filename}, reloading documents...`);
+        loadDocuments();
+    }
 });
 
-// Fallback route
-app.get('*', (req, res) => {
-  res.sendFile(path.join(frontendDir, 'index.html'));
+// Load documents on startup
+loadDocuments();
+
+// Middleware
+app.use(express.json());
+app.use(express.static('./frontend'));
+
+// API endpoint
+app.post('/api/query', async (req, res) => {
+    const { query } = req.body;
+    if (!query) {
+        return res.status(400).json({ error: 'Query is required' });
+    }
+
+    try {
+        const results = await searchDocuments(query);
+        if (results.length === 0) {
+            return res.json({ results: ["Sorry, I couldn't find anything related."] });
+        }
+        res.json({ results });
+    } catch (err) {
+        console.error(`[ERROR] Search failed: ${err.message}`);
+        res.status(500).json({ error: 'Search failed.' });
+    }
 });
 
-app.listen(PORT, async () => {
-  console.log(`[INFO] Server running on port ${PORT}`);
-  await loadDocuments();
+// Start server
+app.listen(PORT, () => {
+    console.log(`[INFO] Server running on port ${PORT}`);
 });
