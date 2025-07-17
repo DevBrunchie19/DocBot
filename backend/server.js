@@ -8,9 +8,13 @@ import Fuse from 'fuse.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const __dirname = path.resolve();
+const dataDir = path.join(__dirname, 'backend', 'data');
+const frontendDir = path.join(__dirname, 'frontend');
 
-const dataDir = path.resolve('./backend/data');
+// Serve static files (frontend)
+app.use(express.static(frontendDir));
+app.use(cors());
 
 async function loadDocuments() {
   const docs = [];
@@ -51,6 +55,7 @@ loadDocuments().then(loaded => {
   console.error('[ERROR] Failed to load documents:', err);
 });
 
+// API route for searching
 app.get('/search', (req, res) => {
   const query = req.query.q;
   if (!query) {
@@ -71,8 +76,9 @@ app.get('/search', (req, res) => {
   res.json({ results });
 });
 
-app.get('/', (req, res) => {
-  res.send('Backend is running');
+// Fallback to index.html for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(frontendDir, 'index.html'));
 });
 
 app.listen(PORT, () => {
