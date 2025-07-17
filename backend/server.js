@@ -1,110 +1,105 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
-import fuzzysort from 'fuzzysort';
+import pdfParse from 'pdf-parse';
+import Fuse from 'fuse.js';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
-const DATA_DIR = './backend/data';
 
-let documents = []; // Store loaded documents
+app.use(express.json());
+app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Function to load and parse documents
+const dataDir = path.join(__dirname, 'data');
+let documents = [];
+
+// Load and index all PDFs/DOCX in the data folder
 async function loadDocuments() {
-    console.log('[INFO] Loading documents...');
-    documents = []; // Clear existing documents
+    try {
+        const files = fs.readdirSync(dataDir);
+        const allDocs = [];
 
-    const files = fs.readdirSync(DATA_DIR);
-    for (const file of files) {
-        const filePath = path.join(DATA_DIR, file);
-        const ext = path.extname(file).toLowerCase();
+        for (const file of files) {
+            const ext = path.extname(file).toLowerCase();
+            const filePath = path.join(dataDir, file);
 
-        try {
-            let text = '';
-            if (ext === '.pdf') {
-                const dataBuffer = fs.readFileSync(filePath);
-                const pdfData = await pdfParse(dataBuffer);
-                text = pdfData.text;
-            } else if (ext === '.docx') {
-                const result = await mammoth.extractRawText({ path: filePath });
-                text = result.value;
-            } else {
-                console.log(`[WARN] Skipping unsupported file: ${file}`);
-                continue;
+            try {
+                let textContent = '';
+
+                if (ext === '.pdf') {
+                    const pdfBuffer = fs.readFileSync(filePath);
+                    const pdfData = await pdfParse(pdfBuffer);
+                    textContent = pdfData.text;
+                } else if (ext === '.docx') {
+                    const docxBuffer = fs.readFileSync(filePath);
+                    const result = await mammoth.extractRawText({ buffer: docxBuffer });
+                    textContent = result.value;
+                } else {
+                    console.log(`Skipping unsupported file type: ${file}`);
+                    continue;
+                }
+
+                allDocs.push({
+                    name: file,
+                    content: textContent
+                });
+
+                console.log(`Loaded: ${file}`);
+            } catch (err) {
+                console.error(`Error loading ${file}: ${err.message}`);
             }
-
-            console.log(`[INFO] Loaded: ${file} (${text.length} characters)`);
-            documents.push({ name: file, text });
-        } catch (err) {
-            console.error(`[ERROR] Failed to load ${file}: ${err.message}`);
         }
-    }
 
-    console.log(`[INFO] Total documents loaded: ${documents.length}`);
+        documents = allDocs;
+        console.log(`[INFO] Loaded ${documents.length} documents`);
+    } catch (err) {
+        console.error(`Error reading data directory: ${err.message}`);
+    }
 }
 
-// Chunk text into smaller pieces for fuzzy search
-const CHUNK_SIZE = 500; // number of characters per chunk
-function chunkText(text) {
-    const chunks = [];
-    for (let i = 0; i < text.length; i += CHUNK_SIZE) {
-        chunks.push(text.slice(i, i + CHUNK_SIZE));
-    }
-    return chunks;
+// Setup Fuse.js for fuzzy search
+let fuse;
+function indexDocuments() {
+    const options = {
+        includeScore: true,
+        threshold: 0.4,
+        keys: ['content']
+    };
+    fuse = new Fuse(documents, options);
 }
 
-// Search function using fuzzysort
-async function searchDocuments(query) {
-    const results = [];
+// Endpoint: search documents
+app.post('/search', (req, res) => {
+    const query = req.body.query;
 
-    for (const doc of documents) {
-        const chunks = chunkText(doc.text);
-        const matches = fuzzysort.go(query, chunks, { threshold: -1000, limit: 5 });
-        for (const match of matches) {
-            results.push(match.target);
-        }
+    if (!query || !fuse) {
+        return res.status(400).json({ error: 'No query provided or index not ready.' });
     }
 
-    return results.slice(0, 5); // return top 5 matches
-}
+    const results = fuse.search(query).slice(0, 5).map(r => ({
+        text: r.item.content.substring(0, 500) + '...', // snippet
+        score: r.score
+    }));
 
-// Watch data folder for changes
-fs.watch(DATA_DIR, (eventType, filename) => {
-    if (filename) {
-        console.log(`[INFO] Change detected in ${filename}, reloading documents...`);
-        loadDocuments();
+    if (results.length === 0) {
+        return res.json({ results: [], message: "Sorry, I couldn't find anything related." });
     }
+
+    res.json({ results });
 });
 
-// Load documents on startup
-loadDocuments();
-
-// Middleware
-app.use(express.json());
-app.use(express.static('./frontend'));
-
-// API endpoint
-app.post('/api/query', async (req, res) => {
-    const { query } = req.body;
-    if (!query) {
-        return res.status(400).json({ error: 'Query is required' });
-    }
-
-    try {
-        const results = await searchDocuments(query);
-        if (results.length === 0) {
-            return res.json({ results: ["Sorry, I couldn't find anything related."] });
-        }
-        res.json({ results });
-    } catch (err) {
-        console.error(`[ERROR] Search failed: ${err.message}`);
-        res.status(500).json({ error: 'Search failed.' });
-    }
+// Fallback: serve frontend
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
 // Start server
 app.listen(PORT, () => {
     console.log(`[INFO] Server running on port ${PORT}`);
+    loadDocuments().then(indexDocuments);
 });
