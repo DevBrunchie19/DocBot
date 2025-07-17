@@ -1,16 +1,16 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import pkg from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import Fuse from 'fuse.js';
 import { fileURLToPath } from 'url';
+import pkg from 'pdfjs-dist/legacy/build/pdf.js'; // 👈 use legacy build for compatibility
+
+const { getDocument } = pkg;
 
 // Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const { getDocument } = pkg; // Destructure getDocument
 
 const app = express();
 const PORT = process.env.PORT || 10000;
