@@ -1,12 +1,12 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import pdfParse from 'pdf-parse';
+import { getDocument } from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import Fuse from 'fuse.js';
 import { fileURLToPath } from 'url';
 
-// Fix __dirname in ES modules
+// Fix __dirname for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -14,11 +14,24 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 const dataDir = path.join(__dirname, 'data');
-let documents = []; // All loaded documents
-let fuse = null;    // Fuse.js index
+let documents = [];
+let fuse = null;
+
+async function extractPdfText(filePath) {
+  const pdf = await getDocument(filePath).promise;
+  let text = '';
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(item => item.str).join(' ') + '\n';
+  }
+
+  return text;
+}
 
 async function loadDocuments() {
-  documents = []; // Reset index
+  documents = []; // Reset documents
 
   if (!fs.existsSync(dataDir)) {
     console.log(`[INFO] Creating data folder at ${dataDir}`);
@@ -38,9 +51,7 @@ async function loadDocuments() {
       const ext = path.extname(file).toLowerCase();
 
       if (ext === '.pdf') {
-        const dataBuffer = fs.readFileSync(filePath);
-        const pdfData = await pdfParse(dataBuffer);
-        text = pdfData.text;
+        text = await extractPdfText(filePath);
       } else if (ext === '.docx') {
         const result = await mammoth.extractRawText({ path: filePath });
         text = result.value;
@@ -55,7 +66,6 @@ async function loadDocuments() {
     }
   }
 
-  // Build Fuse.js index
   fuse = new Fuse(documents, {
     includeScore: true,
     keys: ['content'],
@@ -91,7 +101,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(frontendDir, 'index.html'));
 });
 
-// Start server
 app.listen(PORT, async () => {
   console.log(`[INFO] Server running on port ${PORT}`);
   await loadDocuments();
