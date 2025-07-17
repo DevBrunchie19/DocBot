@@ -1,86 +1,98 @@
 import express from 'express';
-import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import Fuse from 'fuse.js';
+import { fileURLToPath } from 'url';
+
+// Fix __dirname in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-const __dirname = path.resolve();
-const dataDir = path.join(__dirname, 'backend', 'data');
-const frontendDir = path.join(__dirname, 'frontend');
-
-// Serve static files (frontend)
-app.use(express.static(frontendDir));
-app.use(cors());
+const dataDir = path.join(__dirname, 'data');
+let documents = []; // All loaded documents
+let fuse = null;    // Fuse.js index
 
 async function loadDocuments() {
-  const docs = [];
+  documents = []; // Reset index
+
   if (!fs.existsSync(dataDir)) {
-    console.warn(`[WARN] Data directory '${dataDir}' does not exist. No documents loaded.`);
-    return docs;
+    console.log(`[INFO] Creating data folder at ${dataDir}`);
+    fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  const files = fs.readdirSync(dataDir);
+  const files = fs.readdirSync(dataDir).filter(file =>
+    ['.pdf', '.docx', '.txt'].includes(path.extname(file).toLowerCase())
+  );
+
+  console.log(`[INFO] Found ${files.length} files in data folder`);
+
   for (const file of files) {
-    const ext = path.extname(file).toLowerCase();
     const filePath = path.join(dataDir, file);
     try {
+      let text = '';
+      const ext = path.extname(file).toLowerCase();
+
       if (ext === '.pdf') {
-        const pdfParse = (await import('pdf-parse')).default;
         const dataBuffer = fs.readFileSync(filePath);
         const pdfData = await pdfParse(dataBuffer);
-        docs.push({ text: pdfData.text });
+        text = pdfData.text;
       } else if (ext === '.docx') {
         const result = await mammoth.extractRawText({ path: filePath });
-        docs.push({ text: result.value });
+        text = result.value;
       } else if (ext === '.txt') {
-        const text = fs.readFileSync(filePath, 'utf-8');
-        docs.push({ text });
+        text = fs.readFileSync(filePath, 'utf8');
       }
+
+      documents.push({ content: text });
+      console.log(`[INFO] Loaded: ${file}`);
     } catch (err) {
-      console.error(`Error loading ${file}:`, err.message);
+      console.error(`[ERROR] Failed to load ${file}:`, err.message);
     }
   }
-  return docs;
+
+  // Build Fuse.js index
+  fuse = new Fuse(documents, {
+    includeScore: true,
+    keys: ['content'],
+    threshold: 0.4
+  });
+  console.log(`[INFO] Document index ready (${documents.length} documents)`);
 }
 
-let documents = [];
-loadDocuments().then(loaded => {
-  documents = loaded;
-  console.log(`[INFO] Loaded ${documents.length} documents`);
-}).catch(err => {
-  console.error('[ERROR] Failed to load documents:', err);
-});
+// Serve frontend
+const frontendDir = path.join(__dirname, '../frontend');
+app.use(express.static(frontendDir));
 
-// API route for searching
+// Search endpoint
 app.get('/search', (req, res) => {
+  if (!fuse) {
+    return res.status(500).json({ error: 'Search index not ready' });
+  }
+
   const query = req.query.q;
   if (!query) {
-    return res.status(400).json({ error: 'Missing query parameter ?q=' });
+    return res.status(400).json({ error: 'No query provided' });
   }
 
-  if (documents.length === 0) {
-    return res.status(503).json({ error: 'No documents available to search.' });
-  }
+  const results = fuse.search(query).slice(0, 5).map(r => ({
+    text: r.item.content.slice(0, 500) + (r.item.content.length > 500 ? '...' : '')
+  }));
 
-  const fuse = new Fuse(documents, {
-    keys: ['text'],
-    threshold: 0.3,
-    minMatchCharLength: 2
-  });
-
-  const results = fuse.search(query).map(result => result.item.text.slice(0, 500));
   res.json({ results });
 });
 
-// Fallback to index.html for all other routes
+// Fallback route
 app.get('*', (req, res) => {
   res.sendFile(path.join(frontendDir, 'index.html'));
 });
 
-app.listen(PORT, () => {
+// Start server
+app.listen(PORT, async () => {
   console.log(`[INFO] Server running on port ${PORT}`);
+  await loadDocuments();
 });
