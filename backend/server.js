@@ -125,14 +125,28 @@ app.get('/api/search', async (req, res) => {
         key: 'content',
         limit: 5,
         threshold: -1000 // Looser match
-    }).map(r => ({
+    });
+
+    if (results.total === 0) {
+        console.log(`🔍 No fuzzy matches found for "${query}". Trying basic keyword search...`);
+        const fallback = documents
+            .filter(doc => doc.content.toLowerCase().includes(query.toLowerCase()))
+            .map(doc => ({
+                snippet: doc.content.slice(0, 300),
+                filename: doc.filename
+            }));
+        return res.json({ results: fallback });
+    }
+
+    const formatted = results.map(r => ({
         snippet: r.obj.content.substring(r.index, r.index + 300),
         filename: r.obj.filename
     }));
 
-    console.log(`🔍 Search for "${query}" returned ${results.length} result(s)`);
-    res.json({ results });
+    console.log(`🔍 Search for "${query}" returned ${formatted.length} result(s)`);
+    res.json({ results: formatted });
 });
+
 
 /**
  * Serve frontend
