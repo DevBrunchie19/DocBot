@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>McHelpie</title>
-    <style>
+  <style>
     body {
       font-family: Arial, sans-serif;
       background-color: #f8f9fa;
@@ -67,9 +67,14 @@
       border-radius: 5px;
       border: 1px solid #ccc;
     }
+    .highlight {
+      font-weight: bold;
+      background-color: yellow;
+    }
   </style>
 </head>
-<div id="chatbox">
+<body>
+  <div id="chatbox">
     <div class="message bot">Hi! I'm <strong>McHelpie</strong>. What can I help you with today?</div>
     <div id="messages"></div>
     <input type="text" id="userInput" placeholder="Type your question here">
@@ -82,8 +87,12 @@
     function appendMessage(text, sender) {
       const msg = document.createElement('div');
       msg.className = 'message ' + sender;
-      msg.textContent = text;
+      msg.innerHTML = text;
       messagesDiv.appendChild(msg);
+    }
+
+    function renderMarkdownBold(text) {
+      return text.replace(/\*\*(.*?)\*\*/g, '<span class="highlight">$1</span>');
     }
 
     async function handleUserQuestion() {
@@ -97,7 +106,8 @@
         const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
         const data = await response.json();
         if (data.results.length > 0) {
-          appendMessage(data.results[0].snippet, 'bot');
+          const fullParagraph = renderMarkdownBold(data.results[0].content);
+          appendMessage(fullParagraph, 'bot');
         } else {
           appendMessage("Sorry, I couldn't find anything related.", 'bot');
         }
@@ -105,13 +115,13 @@
         appendMessage("Error fetching results.", 'bot');
       }
     }
-       // Allow pressing Enter to submit the question
-  document.getElementById('userInput').addEventListener("keypress", function(event) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      handleUserQuestion();
-    }
-  });
+
+    document.getElementById('userInput').addEventListener("keypress", function(event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleUserQuestion();
+      }
+    });
   </script>
 </body>
 </html>
