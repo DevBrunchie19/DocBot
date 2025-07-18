@@ -106,12 +106,12 @@
     try {
       const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
       const data = await response.json();
-      if (data.results.length > 0) {
-  data.results.forEach((result, index) => {
+     if (data.results.length > 0) {
+  data.results.slice(0, 2).forEach((result, index) => {
     appendMessage(`<div>
-      <p>${result.content}</p>
+      <p><b>Result ${index + 1}:</b> ${result.content}</p>
       <small><b>${result.filename}</b> - paragraph ${result.paragraph}</small>
-      ${index < data.results.length - 1 ? '<hr>' : ''}
+      ${index < 1 ? '<hr>' : ''}
     </div>`, 'bot');
   });
 } else {
