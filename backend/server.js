@@ -21,7 +21,7 @@ let paragraphs = [];
 /**
  * Extract text from PDF and split into paragraph-level sections
  */
-const Fuse = require('fuse.js'); // npm install fuse.js
+import Fuse from 'fuse.js';
 
 async function extractParagraphsFromPDF(filePath, filename) {
     const data = new Uint8Array(await fs.readFile(filePath));
