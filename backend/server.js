@@ -77,11 +77,9 @@ function findParagraphsWithKeywords(paragraphs, keywords) {
 }
 
 function highlightKeywords(text, keywords) {
-    for (const keyword of keywords) {
-        const regex = new RegExp(`(${keyword})`, 'gi');
-        text = text.replace(regex, '**$1**');
-    }
-    return text;
+    const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
+    return text.replace(regex, '**$1**');
 }
 
 async function handlePDFQuery(filePath, filename, keywords) {
@@ -153,6 +151,8 @@ app.get('/api/search', async (req, res) => {
         return res.json({ results: [] });
     }
 
+    const keywords = query.trim().split(/\s+/);
+
     const results = fuzzysort.go(query, paragraphs, {
         key: 'content',
         limit: 5,
@@ -160,11 +160,10 @@ app.get('/api/search', async (req, res) => {
     });
 
     const formatted = results.map(r => ({
-    content: highlightKeywords(r.obj.content, [query]),
-    filename: r.obj.filename,
-    paragraph: r.obj.paragraph
-}));
-
+        content: highlightKeywords(r.obj.content, keywords),
+        filename: r.obj.filename,
+        paragraph: r.obj.paragraph
+    }));
 
     console.log(`🔍 Search for "${query}" returned ${formatted.length} result(s)`);
     res.json({ results: formatted });
