@@ -7,7 +7,6 @@ import { fileURLToPath } from 'url';
 import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import { Document, Packer, Paragraph } from 'docx';
 import mammoth from 'mammoth';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -62,20 +61,29 @@ async function extractParagraphsFromPDF(filePath, filename) {
 }
 
 /**
- * Extract paragraphs from Word .docx file using Mammoth
+ * Extract text from Word (.docx) and split into paragraphs
  */
 async function extractParagraphsFromDocx(filePath, filename) {
     try {
-        const data = await fs.readFile(filePath);
-        const result = await mammoth.extractRawText({ buffer: data });
-        const paragraphs = result.value.split(/\n{2,}/).map((p, i) => ({
-            filename,
-            paragraph: i + 1,
-            content: p.trim()
-        })).filter(p => p.content.length > 0);
-        return paragraphs;
+        const result = await mammoth.extractRawText({ path: filePath });
+        const rawText = result.value;
+
+        const splitParas = rawText.split(/\n+/);
+
+        const paraSections = [];
+        for (const para of splitParas) {
+            const clean = para.trim();
+            if (clean) {
+                paraSections.push({
+                    filename,
+                    paragraph: paraSections.length + 1,
+                    content: clean
+                });
+            }
+        }
+        return paraSections;
     } catch (err) {
-        console.error(`❌ Error extracting DOCX ${filename}:`, err.message);
+        console.error(`❌ Error extracting from DOCX ${filename}:`, err.message);
         return [];
     }
 }
@@ -98,22 +106,17 @@ function findParagraphsWithKeywords(paragraphs, keywords) {
 }
 
 function highlightKeywords(text, keywords) {
-    // Escape keywords for regex
+    // Escape regex special chars
     const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const keywordRegex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
 
-    // Highlight keywords (bold)
-    let highlighted = text.replace(keywordRegex, '<b>$1</b>');
+    // Highlight keywords
+    const regex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
+    let highlighted = text.replace(regex, '**$1**');
 
-    // Detect and wrap URLs (http(s), www., or bare domains)
-    const urlRegex = /(\b(?:https?:\/\/|www\.)[^\s<>]+)|(https?:\/\/[^\s<>]+)|\b(www\.[^\s<>]+)\b/gi;
-
-    highlighted = highlighted.replace(urlRegex, (match) => {
-        let href = match;
-        if (!/^https?:\/\//i.test(href)) {
-            href = 'http://' + href;  // Add http if missing for www or bare domains
-        }
-        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+    // Detect links and convert to clickable anchors
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    highlighted = highlighted.replace(urlRegex, (url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
     });
 
     return highlighted;
