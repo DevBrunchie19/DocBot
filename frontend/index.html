@@ -97,7 +97,7 @@
         const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
         const data = await response.json();
         if (data.results.length > 0) {
-          appendMessage(data.results[0].text, 'bot');
+          appendMessage(data.results[0].snippet, 'bot');
         } else {
           appendMessage("Sorry, I couldn't find anything related.", 'bot');
         }
