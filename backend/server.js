@@ -4,7 +4,26 @@ import fs from 'fs/promises';
 import fssync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import fuzzysort const data = new Uint8Array(await fs.readFile(filePath));
+import fuzzysort from 'fuzzysort';
+import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+app.use(cors());
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+let sections = [];
+
+/**
+ * Extract text from PDF and split into page-level sections
+ */
+async function extractSectionsFromPDF(filePath, filename) {
+    console.log(`📖 Extracting sections from PDF: ${filePath}`);
+    const data = new Uint8Array(await fs.readFile(filePath));
     const pdf = await pdfjsLib.getDocument({ data }).promise;
     const pageSections = [];
 
@@ -121,23 +140,3 @@ app.listen(PORT, async () => {
     await loadDocuments();
     watchDataDirectory();
 });
-import fuzzysort from 'fuzzysort';
-import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();
-const PORT = process.env.PORT || 10000;
-
-app.use(cors());
-app.use(express.static(path.join(__dirname, '../frontend')));
-
-let sections = [];
-
-/**
- * Extract text from PDF and split into page-level sections
- */
-async function extractSectionsFromPDF(filePath, filename) {
-    console.log(`📖 Extracting sections from PDF: ${filePath}`);
-   
