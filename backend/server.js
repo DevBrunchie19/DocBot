@@ -19,7 +19,11 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 
 let documents = [];
 
+/**
+ * Extract text from PDF using pdfjs
+ */
 async function extractTextFromPDF(filePath) {
+    console.log(`📖 Extracting text from PDF: ${filePath}`);
     const data = new Uint8Array(await fs.readFile(filePath));
     const pdf = await pdfjsLib.getDocument({ data }).promise;
     let text = '';
@@ -32,11 +36,18 @@ async function extractTextFromPDF(filePath) {
     return text;
 }
 
+/**
+ * Extract text from DOCX using mammoth
+ */
 async function extractTextFromDOCX(filePath) {
+    console.log(`📖 Extracting text from DOCX: ${filePath}`);
     const result = await mammoth.extractRawText({ path: filePath });
     return result.value;
 }
 
+/**
+ * Loads all documents from backend/data/
+ */
 async function loadDocuments() {
     const dataDir = path.join(__dirname, 'data');
     try {
@@ -53,9 +64,16 @@ async function loadDocuments() {
                     text = await extractTextFromPDF(fullPath);
                 } else if (ext === '.docx') {
                     text = await extractTextFromDOCX(fullPath);
+                } else {
+                    console.warn(`⚠️ Skipping unsupported file type: ${file}`);
+                    continue;
                 }
+
                 if (text.trim()) {
-                    loadedDocs.push({ content: text });
+                    loadedDocs.push({
+                        filename: file,
+                        content: text
+                    });
                     console.log(`✅ Loaded ${file}`);
                 } else {
                     console.warn(`⚠️ No text found in ${file}`);
@@ -64,22 +82,31 @@ async function loadDocuments() {
                 console.error(`❌ Error loading ${file}:`, err.message);
             }
         }
+
         documents = loadedDocs;
-        console.log(`📄 Loaded ${loadedDocs.length} documents`);
+        console.log(`📄 Total documents loaded: ${documents.length}`);
     } catch (err) {
         console.error('❌ Failed to read data directory:', err.message);
     }
 }
 
-app.get('/search', async (req, res) => {
+app.get('/api/search', async (req, res) => {
     const query = req.query.q || '';
     if (!query) return res.json({ results: [] });
+
+    if (documents.length === 0) {
+        console.warn('⚠️ No documents loaded to search in');
+        return res.json({ results: [] });
+    }
 
     const results = fuzzysort.go(query, documents, {
         key: 'content',
         limit: 5,
         threshold: -10000
-    }).map(r => r.obj.content.substring(r.index, r.index + 200));
+    }).map(r => ({
+        snippet: r.obj.content.substring(r.index, r.index + 200),
+        filename: r.obj.filename
+    }));
 
     res.json({ results });
 });
