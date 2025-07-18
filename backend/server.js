@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+import mammoth from 'mammoth'; // <-- NEW for DOCX support
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,6 +54,30 @@ async function extractParagraphsFromPDF(filePath, filename) {
                     content: clean
                 });
             }
+        }
+    }
+
+    return paraSections;
+}
+
+/**
+ * Extract text from DOCX and split into paragraph-level sections
+ */
+async function extractParagraphsFromDOCX(filePath, filename) {
+    const result = await mammoth.extractRawText({ path: filePath });
+    const rawText = result.value; // All text in the DOCX file
+
+    const paraSections = [];
+    const splitParas = rawText.split(/\n{2,}|(?<=\.)\s{2,}/); // Split on blank lines or sentence breaks
+
+    for (const para of splitParas) {
+        const clean = para.trim();
+        if (clean) {
+            paraSections.push({
+                filename,
+                paragraph: paraSections.length + 1,
+                content: clean
+            });
         }
     }
 
@@ -109,6 +134,9 @@ async function loadDocuments() {
                 if (ext === '.pdf') {
                     const pdfParagraphs = await extractParagraphsFromPDF(fullPath, file);
                     loadedParagraphs.push(...pdfParagraphs);
+                } else if (ext === '.docx') {
+                    const docxParagraphs = await extractParagraphsFromDOCX(fullPath, file);
+                    loadedParagraphs.push(...docxParagraphs);
                 } else {
                     console.warn(`⚠️ Skipping unsupported file: ${file}`);
                 }
@@ -179,9 +207,8 @@ app.get('/', (req, res) => {
 /**
  * Start server
  */
-app.listen(PORT, '0.0.0.0', async () => {
+app.listen(PORT, '0.0.0.0', async () => { // <-- UPDATED to bind to 0.0.0.0 for Render
     console.log(`[INFO] Server running on port ${PORT}`);
     await loadDocuments();
     watchDataDirectory();
 });
-
