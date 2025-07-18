@@ -16,32 +16,37 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-let sections = [];
+let paragraphs = [];
 
 /**
- * Extract text from PDF and split into page-level sections
+ * Extract text from PDF and split into paragraph-level sections
  */
-async function extractSectionsFromPDF(filePath, filename) {
-    console.log(`📖 Extracting sections from PDF: ${filePath}`);
+async function extractParagraphsFromPDF(filePath, filename) {
+    console.log(`📖 Extracting paragraphs from PDF: ${filePath}`);
     const data = new Uint8Array(await fs.readFile(filePath));
     const pdf = await pdfjsLib.getDocument({ data }).promise;
-    const pageSections = [];
+    const paraSections = [];
 
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        const text = content.items.map(item => item.str).join(' ').trim();
-        if (text) {
-            pageSections.push({
-                filename,
-                page: i,
-                content: text
-            });
-            console.log(`✅ Page ${i} extracted (${text.length} chars)`);
+        const rawText = content.items.map(item => item.str).join(' ').trim();
+        const splitParas = rawText.split(/\\n\\n|(?<=\\.)\\s{2,}/); // split by double newlines or sentence breaks
+
+        for (const para of splitParas) {
+            const clean = para.trim();
+            if (clean) {
+                paraSections.push({
+                    filename,
+                    paragraph: paraSections.length + 1,
+                    content: clean
+                });
+            }
         }
     }
 
-    return pageSections;
+    console.log(`✅ Extracted ${paraSections.length} paragraphs`);
+    return paraSections;
 }
 
 /**
@@ -51,7 +56,7 @@ async function loadDocuments() {
     const dataDir = path.join(__dirname, 'data');
     try {
         const files = await fs.readdir(dataDir);
-        const loadedSections = [];
+        const loadedParagraphs = [];
 
         for (const file of files) {
             const ext = path.extname(file).toLowerCase();
@@ -59,8 +64,8 @@ async function loadDocuments() {
 
             try {
                 if (ext === '.pdf') {
-                    const pdfSections = await extractSectionsFromPDF(fullPath, file);
-                    loadedSections.push(...pdfSections);
+                    const pdfParagraphs = await extractParagraphsFromPDF(fullPath, file);
+                    loadedParagraphs.push(...pdfParagraphs);
                 } else {
                     console.warn(`⚠️ Skipping unsupported file: ${file}`);
                 }
@@ -69,8 +74,8 @@ async function loadDocuments() {
             }
         }
 
-        sections = loadedSections;
-        console.log(`📄 Total sections loaded: ${sections.length}`);
+        paragraphs = loadedParagraphs;
+        console.log(`📄 Total paragraphs loaded: ${paragraphs.length}`);
     } catch (err) {
         console.error('❌ Failed to read data directory:', err.message);
     }
@@ -98,12 +103,12 @@ app.get('/api/search', async (req, res) => {
     const query = req.query.q || '';
     if (!query) return res.json({ results: [] });
 
-    if (sections.length === 0) {
-        console.warn('⚠️ No sections loaded to search in');
+    if (paragraphs.length === 0) {
+        console.warn('⚠️ No paragraphs loaded to search in');
         return res.json({ results: [] });
     }
 
-    const results = fuzzysort.go(query, sections, {
+    const results = fuzzysort.go(query, paragraphs, {
         key: 'content',
         limit: 5,
         threshold: -1000
@@ -118,7 +123,7 @@ app.get('/api/search', async (req, res) => {
     const formatted = results.map(r => ({
         snippet: getSnippet(r.obj.content, query, r.index),
         filename: r.obj.filename,
-        page: r.obj.page
+        paragraph: r.obj.paragraph
     }));
 
     console.log(`🔍 Search for "${query}" returned ${formatted.length} result(s)`);
