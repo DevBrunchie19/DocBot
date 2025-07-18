@@ -177,7 +177,7 @@ app.get('/api/search', async (req, res) => {
     const results = fuzzysort.go(query, paragraphs, {
         key: 'content',
         limit: 5,
-        threshold: -1000
+        threshold: -2000 // allow weaker matches
     });
 
     const formatted = results.map(r => ({
