@@ -163,7 +163,7 @@ app.get('/api/search', async (req, res) => {
         return res.json({ results: [] });
     }
 
-    // 🆕 Extract important keywords using NLP
+    // 🧠 Extract important keywords using NLP
     const doc = nlp(query);
     let keywords = doc.nouns().out('array'); // Get nouns from query
     console.log(`🧠 Extracted keywords: ${keywords}`);
@@ -174,11 +174,26 @@ app.get('/api/search', async (req, res) => {
         console.log(`⚠️ No nouns found, fallback keywords: ${keywords}`);
     }
 
-    const results = fuzzysort.go(query, paragraphs, {
+    // 🌟 Primary search: fuzzysort on full query
+    let results = fuzzysort.go(query, paragraphs, {
         key: 'content',
-        limit: 5,
-        threshold: -2000 // allow weaker matches
+        limit: 10,
+        threshold: null // allow weaker matches
     });
+
+    // 🌟 Fallback: search individual keywords if full query fails
+    if (results.total === 0 && keywords.length > 0) {
+        console.log('🔄 No matches for full query, falling back to keywords');
+        results = [];
+        for (const word of keywords) {
+            const wordResults = fuzzysort.go(word, paragraphs, {
+                key: 'content',
+                limit: 5,
+                threshold: null
+            });
+            results.push(...wordResults);
+        }
+    }
 
     const formatted = results.map(r => ({
         content: highlightKeywords(r.obj.content, keywords),
