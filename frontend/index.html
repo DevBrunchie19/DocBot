@@ -81,47 +81,49 @@
     <button onclick="handleUserQuestion()">Send</button>
   </div>
 
-  <script>
-    const messagesDiv = document.getElementById('messages');
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js"></script>
+<script>
+  const messagesDiv = document.getElementById('messages');
 
-    function appendMessage(text, sender) {
-      const msg = document.createElement('div');
-      msg.className = 'message ' + sender;
-      msg.innerHTML = text;
-      messagesDiv.appendChild(msg);
-    }
+  function appendMessage(text, sender) {
+    const msg = document.createElement('div');
+    msg.className = 'message ' + sender;
 
-    function renderMarkdownBold(text) {
-      return text.replace(/\*\*(.*?)\*\*/g, '<span class="highlight">$1</span>');
-    }
+    // Sanitize HTML from backend (prevents XSS)
+    const safeHTML = DOMPurify.sanitize(text);
+    msg.innerHTML = safeHTML;
 
-    async function handleUserQuestion() {
-      const input = document.getElementById('userInput');
-      const query = input.value.trim();
-      if (!query) return;
-      appendMessage(query, 'user');
-      input.value = '';
+    messagesDiv.appendChild(msg);
+  }
 
-      try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-        const data = await response.json();
-        if (data.results.length > 0) {
-          const fullParagraph = renderMarkdownBold(data.results[0].content);
-          appendMessage(fullParagraph, 'bot');
-        } else {
-          appendMessage("Sorry, I couldn't find anything related.", 'bot');
-        }
-      } catch (err) {
-        appendMessage("Error fetching results.", 'bot');
+  async function handleUserQuestion() {
+    const input = document.getElementById('userInput');
+    const query = input.value.trim();
+    if (!query) return;
+    appendMessage(query, 'user');
+    input.value = '';
+
+    try {
+      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      if (data.results.length > 0) {
+        const fullParagraph = data.results[0].content; // Already contains <b> and <a>
+        appendMessage(fullParagraph, 'bot');
+      } else {
+        appendMessage("Sorry, I couldn't find anything related.", 'bot');
       }
+    } catch (err) {
+      appendMessage("Error fetching results.", 'bot');
     }
+  }
 
-    document.getElementById('userInput').addEventListener("keypress", function(event) {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        handleUserQuestion();
-      }
-    });
-  </script>
+  document.getElementById('userInput').addEventListener("keypress", function(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleUserQuestion();
+    }
+  });
+</script>
+
 </body>
 </html>
