@@ -79,6 +79,7 @@ async function loadDocuments() {
                         content: text
                     });
                     console.log(`✅ Loaded: ${file} (${text.length} characters)`);
+                    console.log(`🔍 Preview of loaded content from ${file}:`, text.slice(0, 300));
                 } else {
                     console.warn(`⚠️ No text found in ${file}`);
                 }
@@ -124,29 +125,34 @@ app.get('/api/search', async (req, res) => {
     const results = fuzzysort.go(query, documents, {
         key: 'content',
         limit: 5,
-        threshold: -1000 // Looser match
+        threshold: -1000
     });
+
+    const getSnippet = (content, query, index) => {
+        const safeIndex = index >= 0 ? index : content.toLowerCase().indexOf(query.toLowerCase());
+        const start = Math.max(0, safeIndex);
+        return content.substring(start, start + 300);
+    };
 
     if (results.total === 0) {
         console.log(`🔍 No fuzzy matches found for "${query}". Trying basic keyword search...`);
         const fallback = documents
             .filter(doc => doc.content.toLowerCase().includes(query.toLowerCase()))
             .map(doc => ({
-                snippet: doc.content.slice(0, 300),
+                snippet: getSnippet(doc.content, query, -1),
                 filename: doc.filename
             }));
         return res.json({ results: fallback });
     }
 
     const formatted = results.map(r => ({
-        snippet: r.obj.content.substring(r.index, r.index + 300),
+        snippet: getSnippet(r.obj.content, query, r.index),
         filename: r.obj.filename
     }));
 
     console.log(`🔍 Search for "${query}" returned ${formatted.length} result(s)`);
     res.json({ results: formatted });
 });
-
 
 /**
  * Serve frontend
