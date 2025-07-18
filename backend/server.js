@@ -179,8 +179,9 @@ app.get('/', (req, res) => {
 /**
  * Start server
  */
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
     console.log(`[INFO] Server running on port ${PORT}`);
     await loadDocuments();
     watchDataDirectory();
 });
+
