@@ -1,4 +1,4 @@
-import express from 'express';
+this is the backend: import express from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
 import fssync from 'fs';
@@ -107,7 +107,7 @@ function findParagraphsWithKeywords(paragraphs, keywords) {
 function highlightKeywords(text, keywords) {
     // Highlight keywords (bold)
     const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const keywordRegex = new RegExp(\\b(${escapedKeywords.join('|')})\\b, 'gi');
+    const keywordRegex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
     let highlighted = text.replace(keywordRegex, '<b>$1</b>');
 
     // Detect and wrap URLs
@@ -138,15 +138,15 @@ async function loadDocuments() {
                     const docxParagraphs = await extractParagraphsFromDOCX(fullPath, file);
                     loadedParagraphs.push(...docxParagraphs);
                 } else {
-                    console.warn(⚠️ Skipping unsupported file: ${file});
+                    console.warn(`⚠️ Skipping unsupported file: ${file}`);
                 }
             } catch (err) {
-                console.error(❌ Error processing ${file}:, err.message);
+                console.error(`❌ Error processing ${file}:`, err.message);
             }
         }
 
         paragraphs = loadedParagraphs;
-        console.log(📄 Total paragraphs loaded: ${paragraphs.length});
+        console.log(`📄 Total paragraphs loaded: ${paragraphs.length}`);
     } catch (err) {
         console.error('❌ Failed to read data directory:', err.message);
     }
@@ -157,11 +157,11 @@ async function loadDocuments() {
  */
 function watchDataDirectory() {
     const dataDir = path.join(__dirname, 'data');
-    console.log(👀 Watching ${dataDir} for changes...);
+    console.log(`👀 Watching ${dataDir} for changes...`);
 
     fssync.watch(dataDir, async (eventType, filename) => {
         if (filename) {
-            console.log(🔄 Detected ${eventType} on ${filename});
+            console.log(`🔄 Detected ${eventType} on ${filename}`);
             await loadDocuments();
         }
     });
@@ -193,7 +193,7 @@ app.get('/api/search', async (req, res) => {
         paragraph: r.obj.paragraph
     }));
 
-    console.log(🔍 Search for "${query}" returned ${formatted.length} result(s));
+    console.log(`🔍 Search for "${query}" returned ${formatted.length} result(s)`);
     res.json({ results: formatted });
 });
 
@@ -208,7 +208,7 @@ app.get('/', (req, res) => {
  * Start server
  */
 app.listen(PORT, '0.0.0.0', async () => {
-    console.log([INFO] Server running on port ${PORT});
+    console.log(`[INFO] Server running on port ${PORT}`);
     await loadDocuments();
     watchDataDirectory();
 });
