@@ -30,8 +30,21 @@ async function extractParagraphsFromPDF(filePath, filename) {
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        const rawText = content.items.map(item => item.str).join(' ').trim();
-        const splitParas = rawText.split(/\\n\\n|(?<=\\.)\\s{2,}/); // split by double newlines or sentence breaks
+
+        // Attempt to preserve line breaks
+        let rawText = '';
+        let lastY = null;
+
+        for (const item of content.items) {
+            if (lastY === null || Math.abs(item.transform[5] - lastY) > 10) {
+                rawText += '\n'; // new line if Y position changes significantly
+            }
+            rawText += item.str + ' ';
+            lastY = item.transform[5];
+        }
+
+        // Split by double newlines or sentence breaks with multiple spaces
+        const splitParas = rawText.split(/\n{2,}|(?<=\.)\s{2,}/);
 
         for (const para of splitParas) {
             const clean = para.trim();
