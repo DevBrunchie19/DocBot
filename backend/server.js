@@ -4,7 +4,6 @@ import fs from 'fs/promises';
 import fssync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 import mammoth from 'mammoth'; // DOCX support
@@ -89,7 +88,6 @@ async function extractParagraphsFromDOCX(filePath, filename) {
  * Highlight keywords and detect clickable links
  */
 function highlightKeywords(text, keywords) {
-    // Highlight keywords (bold)
     const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const keywordRegex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
     let highlighted = text.replace(keywordRegex, '<b>$1</b>');
@@ -177,7 +175,7 @@ app.get('/api/search', async (req, res) => {
     // 🌟 Primary search: fuzzysort on full query
     let results = fuzzysort.go(query, paragraphs, {
         key: 'content',
-        limit: 10,
+        limit: 50,
         threshold: null // allow weaker matches
     });
 
@@ -188,14 +186,32 @@ app.get('/api/search', async (req, res) => {
         for (const word of keywords) {
             const wordResults = fuzzysort.go(word, paragraphs, {
                 key: 'content',
-                limit: 5,
+                limit: 20,
                 threshold: null
             });
             results.push(...wordResults);
         }
     }
 
-    const formatted = results.map(r => ({
+    // 🆕 Secondary ranking: score based on keyword overlap
+    const scoredResults = results.map(r => {
+        const textLower = r.obj.content.toLowerCase();
+        const matchedKeywordCount = keywords.filter(k => textLower.includes(k.toLowerCase())).length;
+        return {
+            ...r,
+            matchedKeywordCount
+        };
+    });
+
+    // Sort by number of matched keywords (desc) then fuzzysort score (asc)
+    scoredResults.sort((a, b) => {
+        if (b.matchedKeywordCount !== a.matchedKeywordCount) {
+            return b.matchedKeywordCount - a.matchedKeywordCount;
+        }
+        return a.score - b.score; // fuzzysort score: lower is better
+    });
+
+    const formatted = scoredResults.slice(0, 10).map(r => ({
         content: highlightKeywords(r.obj.content, keywords),
         filename: r.obj.filename,
         paragraph: r.obj.paragraph
