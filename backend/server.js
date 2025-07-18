@@ -8,6 +8,7 @@ import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 import mammoth from 'mammoth'; // DOCX support
+import nlp from 'compromise'; // 🆕 NLP library
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -82,23 +83,6 @@ async function extractParagraphsFromDOCX(filePath, filename) {
     }
 
     return paraSections;
-}
-
-function findParagraphsWithKeywords(paragraphs, keywords) {
-    const fuse = new Fuse(paragraphs, {
-        keys: ['content'],
-        threshold: 0.4,
-        includeScore: true,
-    });
-
-    const matches = new Set();
-
-    for (const keyword of keywords) {
-        const results = fuse.search(keyword);
-        results.forEach(result => matches.add(result.item));
-    }
-
-    return Array.from(matches);
 }
 
 /**
@@ -179,7 +163,16 @@ app.get('/api/search', async (req, res) => {
         return res.json({ results: [] });
     }
 
-    const keywords = query.trim().split(/\s+/);
+    // 🆕 Extract important keywords using NLP
+    const doc = nlp(query);
+    let keywords = doc.nouns().out('array'); // Get nouns from query
+    console.log(`🧠 Extracted keywords: ${keywords}`);
+
+    // Fallback to splitting if no nouns found
+    if (keywords.length === 0) {
+        keywords = query.trim().split(/\s+/);
+        console.log(`⚠️ No nouns found, fallback keywords: ${keywords}`);
+    }
 
     const results = fuzzysort.go(query, paragraphs, {
         key: 'content',
