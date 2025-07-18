@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import mammoth from 'mammoth'; // <-- NEW for DOCX support
+import mammoth from 'mammoth'; // DOCX support
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -101,20 +101,20 @@ function findParagraphsWithKeywords(paragraphs, keywords) {
     return Array.from(matches);
 }
 
+/**
+ * Highlight keywords and detect clickable links
+ */
 function highlightKeywords(text, keywords) {
+    // Highlight keywords (bold)
     const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const regex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
-    return text.replace(regex, '**$1**');
-}
+    const keywordRegex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
+    let highlighted = text.replace(keywordRegex, '<b>$1</b>');
 
-async function handlePDFQuery(filePath, filename, keywords) {
-    const paragraphs = await extractParagraphsFromPDF(filePath, filename);
-    const matchedParas = findParagraphsWithKeywords(paragraphs, keywords);
+    // Detect and wrap URLs
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    highlighted = highlighted.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 
-    return matchedParas.map(p => ({
-        paragraph: p.paragraph,
-        content: highlightKeywords(p.content, keywords)
-    }));
+    return highlighted;
 }
 
 /**
@@ -207,7 +207,7 @@ app.get('/', (req, res) => {
 /**
  * Start server
  */
-app.listen(PORT, '0.0.0.0', async () => { // <-- UPDATED to bind to 0.0.0.0 for Render
+app.listen(PORT, '0.0.0.0', async () => {
     console.log(`[INFO] Server running on port ${PORT}`);
     await loadDocuments();
     watchDataDirectory();
