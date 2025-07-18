@@ -7,7 +7,8 @@ import { fileURLToPath } from 'url';
 import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import mammoth from 'mammoth'; // DOCX support
+import { Document, Packer, Paragraph } from 'docx';
+import mammoth from 'mammoth';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,27 +62,22 @@ async function extractParagraphsFromPDF(filePath, filename) {
 }
 
 /**
- * Extract text from DOCX and split into paragraph-level sections
+ * Extract paragraphs from Word .docx file using Mammoth
  */
-async function extractParagraphsFromDOCX(filePath, filename) {
-    const result = await mammoth.extractRawText({ path: filePath });
-    const rawText = result.value; // All text in the DOCX file
-
-    const paraSections = [];
-    const splitParas = rawText.split(/\n{2,}|(?<=\.)\s{2,}/); // Split on blank lines or sentence breaks
-
-    for (const para of splitParas) {
-        const clean = para.trim();
-        if (clean) {
-            paraSections.push({
-                filename,
-                paragraph: paraSections.length + 1,
-                content: clean
-            });
-        }
+async function extractParagraphsFromDocx(filePath, filename) {
+    try {
+        const data = await fs.readFile(filePath);
+        const result = await mammoth.extractRawText({ buffer: data });
+        const paragraphs = result.value.split(/\n{2,}/).map((p, i) => ({
+            filename,
+            paragraph: i + 1,
+            content: p.trim()
+        })).filter(p => p.content.length > 0);
+        return paragraphs;
+    } catch (err) {
+        console.error(`❌ Error extracting DOCX ${filename}:`, err.message);
+        return [];
     }
-
-    return paraSections;
 }
 
 function findParagraphsWithKeywords(paragraphs, keywords) {
@@ -101,20 +97,36 @@ function findParagraphsWithKeywords(paragraphs, keywords) {
     return Array.from(matches);
 }
 
-/**
- * Highlight keywords and detect clickable links
- */
 function highlightKeywords(text, keywords) {
-    // Highlight keywords (bold)
+    // Escape keywords for regex
     const escapedKeywords = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const keywordRegex = new RegExp(`\\b(${escapedKeywords.join('|')})\\b`, 'gi');
+
+    // Highlight keywords (bold)
     let highlighted = text.replace(keywordRegex, '<b>$1</b>');
 
-    // Detect and wrap URLs
-    const urlRegex = /(https?:\/\/[^\s]+)/g;
-    highlighted = highlighted.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+    // Detect and wrap URLs (http(s), www., or bare domains)
+    const urlRegex = /(\b(?:https?:\/\/|www\.)[^\s<>]+)|(https?:\/\/[^\s<>]+)|\b(www\.[^\s<>]+)\b/gi;
+
+    highlighted = highlighted.replace(urlRegex, (match) => {
+        let href = match;
+        if (!/^https?:\/\//i.test(href)) {
+            href = 'http://' + href;  // Add http if missing for www or bare domains
+        }
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+    });
 
     return highlighted;
+}
+
+async function handlePDFQuery(filePath, filename, keywords) {
+    const paragraphs = await extractParagraphsFromPDF(filePath, filename);
+    const matchedParas = findParagraphsWithKeywords(paragraphs, keywords);
+
+    return matchedParas.map(p => ({
+        paragraph: p.paragraph,
+        content: highlightKeywords(p.content, keywords)
+    }));
 }
 
 /**
@@ -135,7 +147,7 @@ async function loadDocuments() {
                     const pdfParagraphs = await extractParagraphsFromPDF(fullPath, file);
                     loadedParagraphs.push(...pdfParagraphs);
                 } else if (ext === '.docx') {
-                    const docxParagraphs = await extractParagraphsFromDOCX(fullPath, file);
+                    const docxParagraphs = await extractParagraphsFromDocx(fullPath, file);
                     loadedParagraphs.push(...docxParagraphs);
                 } else {
                     console.warn(`⚠️ Skipping unsupported file: ${file}`);
@@ -207,7 +219,7 @@ app.get('/', (req, res) => {
 /**
  * Start server
  */
-app.listen(PORT, '0.0.0.0', async () => {
+app.listen(PORT, async () => {
     console.log(`[INFO] Server running on port ${PORT}`);
     await loadDocuments();
     watchDataDirectory();
