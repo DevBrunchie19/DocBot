@@ -159,17 +159,12 @@ app.get('/api/search', async (req, res) => {
         threshold: -1000
     });
 
-    const getSnippet = (content, query, index) => {
-        const safeIndex = index >= 0 ? index : content.toLowerCase().indexOf(query.toLowerCase());
-        const start = Math.max(0, safeIndex);
-        return content.substring(start, start + 300);
-    };
-
     const formatted = results.map(r => ({
-        snippet: getSnippet(r.obj.content, query, r.index),
-        filename: r.obj.filename,
-        paragraph: r.obj.paragraph
-    }));
+    content: highlightKeywords(r.obj.content, [query]),
+    filename: r.obj.filename,
+    paragraph: r.obj.paragraph
+}));
+
 
     console.log(`🔍 Search for "${query}" returned ${formatted.length} result(s)`);
     res.json({ results: formatted });
