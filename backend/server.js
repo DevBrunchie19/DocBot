@@ -121,7 +121,7 @@ app.get('/api/search', async (req, res) => {
     const results = fuzzysort.go(query, documents, {
         key: 'content',
         limit: 5,
-        threshold: -10000
+        threshold: -100000
     }).map(r => ({
         snippet: r.obj.content.substring(r.index, r.index + 200),
         filename: r.obj.filename
