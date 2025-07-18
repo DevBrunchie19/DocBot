@@ -21,8 +21,9 @@ let paragraphs = [];
 /**
  * Extract text from PDF and split into paragraph-level sections
  */
+const Fuse = require('fuse.js'); // npm install fuse.js
+
 async function extractParagraphsFromPDF(filePath, filename) {
-    console.log(`📖 Extracting paragraphs from PDF: ${filePath}`);
     const data = new Uint8Array(await fs.readFile(filePath));
     const pdf = await pdfjsLib.getDocument({ data }).promise;
     const paraSections = [];
@@ -31,19 +32,17 @@ async function extractParagraphsFromPDF(filePath, filename) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
 
-        // Attempt to preserve line breaks
         let rawText = '';
         let lastY = null;
 
         for (const item of content.items) {
             if (lastY === null || Math.abs(item.transform[5] - lastY) > 10) {
-                rawText += '\n'; // new line if Y position changes significantly
+                rawText += '\n';
             }
             rawText += item.str + ' ';
             lastY = item.transform[5];
         }
 
-        // Split by double newlines or sentence breaks with multiple spaces
         const splitParas = rawText.split(/\n{2,}|(?<=\.)\s{2,}/);
 
         for (const para of splitParas) {
@@ -58,8 +57,43 @@ async function extractParagraphsFromPDF(filePath, filename) {
         }
     }
 
-    console.log(`✅ Extracted ${paraSections.length} paragraphs`);
     return paraSections;
+}
+
+function findParagraphsWithKeywords(paragraphs, keywords) {
+    const fuse = new Fuse(paragraphs, {
+        keys: ['content'],
+        threshold: 0.4, // Adjust for fuzziness
+        includeScore: true,
+    });
+
+    const matches = new Set();
+
+    for (const keyword of keywords) {
+        const results = fuse.search(keyword);
+        results.forEach(result => matches.add(result.item));
+    }
+
+    return Array.from(matches);
+}
+
+function highlightKeywords(text, keywords) {
+    for (const keyword of keywords) {
+        const regex = new RegExp(`(${keyword})`, 'gi');
+        text = text.replace(regex, '**$1**');
+    }
+    return text;
+}
+
+// Example chatbot handler
+async function handlePDFQuery(filePath, filename, keywords) {
+    const paragraphs = await extractParagraphsFromPDF(filePath, filename);
+    const matchedParas = findParagraphsWithKeywords(paragraphs, keywords);
+
+    return matchedParas.map(p => ({
+        paragraph: p.paragraph,
+        content: highlightKeywords(p.content, keywords)
+    }));
 }
 
 /**
