@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import fssync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Fuse from 'fuse.js';
 import fuzzysort from 'fuzzysort';
 import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
 
@@ -21,8 +22,6 @@ let paragraphs = [];
 /**
  * Extract text from PDF and split into paragraph-level sections
  */
-import Fuse from 'fuse.js';
-
 async function extractParagraphsFromPDF(filePath, filename) {
     const data = new Uint8Array(await fs.readFile(filePath));
     const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -63,7 +62,7 @@ async function extractParagraphsFromPDF(filePath, filename) {
 function findParagraphsWithKeywords(paragraphs, keywords) {
     const fuse = new Fuse(paragraphs, {
         keys: ['content'],
-        threshold: 0.4, // Adjust for fuzziness
+        threshold: 0.4,
         includeScore: true,
     });
 
@@ -85,7 +84,6 @@ function highlightKeywords(text, keywords) {
     return text;
 }
 
-// Example chatbot handler
 async function handlePDFQuery(filePath, filename, keywords) {
     const paragraphs = await extractParagraphsFromPDF(filePath, filename);
     const matchedParas = findParagraphsWithKeywords(paragraphs, keywords);
