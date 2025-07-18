@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
+import fssync from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fuzzysort from 'fuzzysort';
@@ -20,7 +21,7 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 let documents = [];
 
 /**
- * Extract text from PDF using pdfjs
+ * Extract text from PDF
  */
 async function extractTextFromPDF(filePath) {
     console.log(`📖 Extracting text from PDF: ${filePath}`);
@@ -37,7 +38,7 @@ async function extractTextFromPDF(filePath) {
 }
 
 /**
- * Extract text from DOCX using mammoth
+ * Extract text from DOCX
  */
 async function extractTextFromDOCX(filePath) {
     console.log(`📖 Extracting text from DOCX: ${filePath}`);
@@ -46,7 +47,7 @@ async function extractTextFromDOCX(filePath) {
 }
 
 /**
- * Loads all documents from backend/data/
+ * Load all documents from data directory
  */
 async function loadDocuments() {
     const dataDir = path.join(__dirname, 'data');
@@ -65,7 +66,7 @@ async function loadDocuments() {
                 } else if (ext === '.docx') {
                     text = await extractTextFromDOCX(fullPath);
                 } else {
-                    console.warn(`⚠️ Skipping unsupported file type: ${file}`);
+                    console.warn(`⚠️ Skipping unsupported file: ${file}`);
                     continue;
                 }
 
@@ -74,22 +75,40 @@ async function loadDocuments() {
                         filename: file,
                         content: text
                     });
-                    console.log(`✅ Loaded ${file}`);
+                    console.log(`✅ Loaded: ${file}`);
                 } else {
                     console.warn(`⚠️ No text found in ${file}`);
                 }
             } catch (err) {
-                console.error(`❌ Error loading ${file}:`, err.message);
+                console.error(`❌ Error processing ${file}:`, err.message);
             }
         }
 
         documents = loadedDocs;
-        console.log(`📄 Total documents loaded: ${documents.length}`);
+        console.log(`📄 Documents loaded: ${documents.length}`);
     } catch (err) {
         console.error('❌ Failed to read data directory:', err.message);
     }
 }
 
+/**
+ * Watch the data directory for changes
+ */
+function watchDataDirectory() {
+    const dataDir = path.join(__dirname, 'data');
+    console.log(`👀 Watching ${dataDir} for changes...`);
+
+    fssync.watch(dataDir, async (eventType, filename) => {
+        if (filename) {
+            console.log(`🔄 Detected ${eventType} on ${filename}`);
+            await loadDocuments();
+        }
+    });
+}
+
+/**
+ * API endpoint for search
+ */
 app.get('/api/search', async (req, res) => {
     const query = req.query.q || '';
     if (!query) return res.json({ results: [] });
@@ -111,13 +130,18 @@ app.get('/api/search', async (req, res) => {
     res.json({ results });
 });
 
-// Serve frontend
+/**
+ * Serve frontend
+ */
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
-// Start server
+/**
+ * Start server
+ */
 app.listen(PORT, async () => {
     console.log(`[INFO] Server running on port ${PORT}`);
     await loadDocuments();
+    watchDataDirectory();
 });
