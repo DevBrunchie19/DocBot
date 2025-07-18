@@ -34,6 +34,8 @@ async function extractTextFromPDF(filePath) {
         const content = await page.getTextContent();
         text += content.items.map(item => item.str).join(' ') + ' ';
     }
+
+    console.log(`✅ Extracted ${text.length} characters from PDF`);
     return text;
 }
 
@@ -43,6 +45,7 @@ async function extractTextFromPDF(filePath) {
 async function extractTextFromDOCX(filePath) {
     console.log(`📖 Extracting text from DOCX: ${filePath}`);
     const result = await mammoth.extractRawText({ path: filePath });
+    console.log(`✅ Extracted ${result.value.length} characters from DOCX`);
     return result.value;
 }
 
@@ -75,7 +78,7 @@ async function loadDocuments() {
                         filename: file,
                         content: text
                     });
-                    console.log(`✅ Loaded: ${file}`);
+                    console.log(`✅ Loaded: ${file} (${text.length} characters)`);
                 } else {
                     console.warn(`⚠️ No text found in ${file}`);
                 }
@@ -85,7 +88,7 @@ async function loadDocuments() {
         }
 
         documents = loadedDocs;
-        console.log(`📄 Documents loaded: ${documents.length}`);
+        console.log(`📄 Total documents loaded: ${documents.length}`);
     } catch (err) {
         console.error('❌ Failed to read data directory:', err.message);
     }
@@ -121,12 +124,13 @@ app.get('/api/search', async (req, res) => {
     const results = fuzzysort.go(query, documents, {
         key: 'content',
         limit: 5,
-        threshold: -100000
+        threshold: -1000 // Looser match
     }).map(r => ({
-        snippet: r.obj.content.substring(r.index, r.index + 200),
+        snippet: r.obj.content.substring(r.index, r.index + 300),
         filename: r.obj.filename
     }));
 
+    console.log(`🔍 Search for "${query}" returned ${results.length} result(s)`);
     res.json({ results });
 });
 
