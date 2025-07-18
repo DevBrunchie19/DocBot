@@ -107,11 +107,16 @@
       const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
       const data = await response.json();
       if (data.results.length > 0) {
-        const fullParagraph = data.results[0].content; // Already contains <b> and <a>
-        appendMessage(fullParagraph, 'bot');
-      } else {
-        appendMessage("Sorry, I couldn't find anything related.", 'bot');
-      }
+  data.results.forEach((result, index) => {
+    appendMessage(`<div>
+      <p>${result.content}</p>
+      <small><b>${result.filename}</b> - paragraph ${result.paragraph}</small>
+      ${index < data.results.length - 1 ? '<hr>' : ''}
+    </div>`, 'bot');
+  });
+} else {
+  appendMessage("Sorry, I couldn't find anything related.", 'bot');
+}
     } catch (err) {
       appendMessage("Error fetching results.", 'bot');
     }
