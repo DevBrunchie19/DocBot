@@ -12,6 +12,7 @@
     "pdfjs-dist": "^3.11.174",
     "mammoth": "^1.4.2",
     "fuzzysort": "^2.0.4",
-    "fuse.js": "^6.6.2"
+    "fuse.js": "^6.6.2",
+    "compromise": "^14.0.0"
   }
 }
