@@ -161,22 +161,22 @@ app.get('/api/search', async (req, res) => {
         return res.json({ results: [] });
     }
 
-    // 🧠 Extract important keywords using NLP
+    // 🧠 Extract important keywords using NLP (nouns + verbs)
     const doc = nlp(query);
-    let keywords = doc.nouns().out('array'); // Get nouns from query
+    let keywords = doc.nouns().concat(doc.verbs()).out('array');
     console.log(`🧠 Extracted keywords: ${keywords}`);
 
-    // Fallback to splitting if no nouns found
+    // Fallback to splitting if no keywords found
     if (keywords.length === 0) {
         keywords = query.trim().split(/\s+/);
-        console.log(`⚠️ No nouns found, fallback keywords: ${keywords}`);
+        console.log(`⚠️ No keywords found, fallback: ${keywords}`);
     }
 
-    // 🌟 Primary search: fuzzysort on full query
+    // 🌟 Primary search: fuzzysort on full query with stricter threshold
     let results = fuzzysort.go(query, paragraphs, {
         key: 'content',
         limit: 50,
-        threshold: null // allow weaker matches
+        threshold: -1000 // tighter match threshold
     });
 
     // 🌟 Fallback: search individual keywords if full query fails
@@ -187,16 +187,28 @@ app.get('/api/search', async (req, res) => {
             const wordResults = fuzzysort.go(word, paragraphs, {
                 key: 'content',
                 limit: 20,
-                threshold: null
+                threshold: -1000
             });
             results.push(...wordResults);
         }
     }
 
+    // ✅ Filter: only keep results with whole-word keyword matches
+    const isWholeWordMatch = (text, keyword) => {
+        const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+        return regex.test(text);
+    };
+
+    results = results.filter(r =>
+        keywords.some(k => isWholeWordMatch(r.obj.content, k))
+    );
+
     // 🆕 Secondary ranking: score based on keyword overlap
     const scoredResults = results.map(r => {
         const textLower = r.obj.content.toLowerCase();
-        const matchedKeywordCount = keywords.filter(k => textLower.includes(k.toLowerCase())).length;
+        const matchedKeywordCount = keywords.filter(k =>
+            textLower.includes(k.toLowerCase())
+        ).length;
         return {
             ...r,
             matchedKeywordCount
@@ -208,7 +220,7 @@ app.get('/api/search', async (req, res) => {
         if (b.matchedKeywordCount !== a.matchedKeywordCount) {
             return b.matchedKeywordCount - a.matchedKeywordCount;
         }
-        return a.score - b.score; // fuzzysort score: lower is better
+        return a.score - b.score;
     });
 
     const formatted = scoredResults.slice(0, 10).map(r => ({
